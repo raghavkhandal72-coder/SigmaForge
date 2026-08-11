@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SigmaForge</title>
+    <!-- React & Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #0d1117; /* GitHub Dark slate */
+            color: #c9d1d9; 
+            margin: 0; 
+        }
+        .sidebar { width: 260px; background-color: #161b22; border-right: 1px solid #30363d; }
+        .nav-item { padding: 12px 24px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: all 0.2s; color: #8b949e; }
+        .nav-item:hover { background-color: #21262d; color: #c9d1d9; }
+        .nav-item.active { background-color: #1f6feb20; color: #58a6ff; border-left: 3px solid #58a6ff; }
+        .card { background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; }
+        
+        /* Coverage ASCII Styling */
+        .ascii-bar {
+            font-family: monospace;
+            font-size: 14px;
+            letter-spacing: 1px;
+            white-space: pre;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        function App() {
+            const [activeTab, setActiveTab] = useState('SignalAnalysis');
+            const [rules, setRules] = useState([]);
+            const [coverage, setCoverage] = useState(null);
+            const [tests, setTests] = useState([]);
+            const [signalData, setSignalData] = useState(null);
+            const chartRef = useRef(null);
+
+            const API_BASE = "http://127.0.0.1:8004/api";
+
+            useEffect(() => {
+                fetch(`${API_BASE}/rules`).then(r => r.json()).then(setRules).catch(console.error);
+                fetch(`${API_BASE}/coverage`).then(r => r.json()).then(setCoverage).catch(console.error);
+                fetch(`${API_BASE}/tests/recent`).then(r => r.json()).then(setTests).catch(console.error);
+                fetch(`${API_BASE}/signal_analysis`).then(r => r.json()).then(setSignalData).catch(console.error);
+            }, []);
+
+            useEffect(() => {
+                if (activeTab === 'SignalAnalysis' && signalData) {
+                    const ctx = document.getElementById('signalChart');
+                    if (ctx) {
+                        if (chartRef.current) {
+                            chartRef.current.destroy();
+                        }
+                        chartRef.current = new Chart(ctx, {
+                            type: 'line',
+                            data: signalData.trend_data,
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                elements: { point: { radius: 0 } },
+                                scales: {
+                                    y: {
+                                        grid: { color: '#30363d' },
+                                        ticks: { color: '#8b949e', callback: function(value) { return value + 'M'; } },
+                                        min: 0,
+                                        max: 4
+                                    },
+                                    x: {
+                                        grid: { display: false },
+                                        ticks: { color: '#8b949e' }
+                                    }
+                                },
+                                plugins: { legend: { display: false } }
+                            }
+                        });
+                    }
+                }
+            }, [activeTab, signalData]);
+
+            const generateAsciiBar = (score) => {
+                const totalBlocks = 20;
+                const filledBlocks = Math.round((score / 100) * totalBlocks);
+                const emptyBlocks = totalBlocks - filledBlocks;
+                return "█".repeat(filledBlocks) + "░".repeat(emptyBlocks);
+            };
+
+            const renderContent = () => {
+                if (activeTab === 'Rules') {
+                    return (
+                        <div className="p-8">
+                            <div className="flex justify-between items-center mb-6">
+                                <div>
+                                    <h1 className="text-2xl font-bold text-white mb-2">Detection Rules (Sigma)</h1>
+                                    <p className="text-[#8b949e]">Manage, version, and tune your SIEM-agnostic detection rules.</p>
+                                </div>
+                                <button className="bg-[#238636] hover:bg-[#2ea043] text-white px-4 py-2 rounded-md text-sm font-semibold transition">
+                                    + Create New Rule
+                                </button>
+                            </div>
+
+                            <div className="card overflow-hidden">
+                                <div className="p-4 border-b border-[#30363d] flex justify-between items-center bg-[#0d1117]">
+                                    <div className="flex gap-4">
+                                        <input type="text" placeholder="Search rules, MITRE techniques..." className="bg-[#0d1117] border border-[#30363d] rounded px-3 py-1.5 text-sm w-80 text-white focus:outline-none focus:border-[#58a6ff]" />
+                                    </div>
+                                    <div className="text-sm text-[#8b949e]">Total Rules: {rules.length}</div>
+                                </div>
+                                <table className="w-full text-left text-sm">
+                                    <thead>
+                                        <tr className="bg-[#161b22] border-b border-[#30363d] text-[#8b949e]">
+                                            <th className="p-3 font-semibold w-12 text-center">Status</th>
+                                            <th className="p-3 font-semibold">Rule Name</th>
+                                            <th className="p-3 font-semibold w-32">MITRE</th>
+                                            <th className="p-3 font-semibold w-24">Precision</th>
+                                            <th className="p-3 font-semibold w-24">Recall</th>
+                                            <th className="p-3 font-semibold w-24">FP Rate</th>
+                                            <th className="p-3 font-semibold w-32">Last Updated</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {rules.map((rule, idx) => (
+                                            <tr key={idx} className="border-b border-[#30363d] hover:bg-[#21262d] transition">
+                                                <td className="p-3 text-center">
+                                                    <span className={`inline-block w-2 h-2 rounded-full ${rule.status === 'Production' ? 'bg-[#3fb950]' : rule.status === 'Testing' ? 'bg-[#d29922]' : 'bg-[#f85149]'}`}></span>
+                                                </td>
+                                                <td className="p-3 font-medium text-[#c9d1d9]">{rule.name}</td>
+                                                <td className="p-3 text-[#58a6ff] font-mono text-xs">{rule.mitre}</td>
+                                                <td className="p-3">
+                                                    <span className={`font-mono ${rule.precision >= 90 ? 'text-[#3fb950]' : rule.precision >= 80 ? 'text-[#d29922]' : 'text-[#f85149]'}`}>{rule.precision}%</span>
+                                                </td>
+                                                <td className="p-3">
+                                                    <span className={`font-mono ${rule.recall >= 90 ? 'text-[#3fb950]' : rule.recall >= 80 ? 'text-[#d29922]' : 'text-[#f85149]'}`}>{rule.recall}%</span>
+                                                </td>
+                                                <td className="p-3">
+                                                    <span className={`font-mono ${rule.fp_rate <= 5 ? 'text-[#3fb950]' : rule.fp_rate <= 15 ? 'text-[#d29922]' : 'text-[#f85149]'}`}>{rule.fp_rate}%</span>
+                                                </td>
+                                                <td className="p-3 text-[#8b949e]">{rule.last_updated}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    );
+                }
+
+                if (activeTab === 'Coverage') {
+                    if (!coverage) return <div className="p-8">Loading...</div>;
+                    return (
+                        <div className="p-8">
+                            <div className="flex justify-between items-center mb-8">
+                                <div>
+                                    <h1 className="text-3xl font-bold text-white mb-2">MITRE ATT&CK Coverage Map</h1>
+                                    <p className="text-[#8b949e]">Visualize your detection posture against adversary tactics.</p>
+                                </div>
+                                <div className="card p-4 flex flex-col items-end bg-[#0d1117]">
+                                    <div className="text-xs text-[#8b949e] uppercase font-bold mb-1">Overall Coverage</div>
+                                    <div className="flex items-center gap-3">
+                                        <div className="ascii-bar text-[#58a6ff]">{generateAsciiBar(coverage.overall)}</div>
+                                        <span className="text-2xl font-bold text-white">{coverage.overall}%</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="card p-6 bg-[#0d1117]">
+                                <div className="grid grid-cols-2 gap-x-16 gap-y-6">
+                                    {coverage.tactics.map((tactic, idx) => (
+                                        <div key={idx} className="flex flex-col gap-2">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[#c9d1d9] font-medium w-48">{tactic.name}</span>
+                                                <span className="text-[#8b949e] text-xs font-mono">{tactic.rules} Rules</span>
+                                            </div>
+                                            <div className="flex items-center gap-4">
+                                                <div className={`ascii-bar ${tactic.score >= 80 ? 'text-[#3fb950]' : tactic.score >= 60 ? 'text-[#d29922]' : 'text-[#f85149]'}`}>
+                                                    {generateAsciiBar(tactic.score)}
+                                                </div>
+                                                <span className="text-white font-mono w-10 text-right">{tactic.score}%</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+
+                if (activeTab === 'Testing') {
+                    return (
+                        <div className="p-8">
+                            <div className="flex justify-between items-center mb-6">
+                                <div>
+                                    <h1 className="text-2xl font-bold text-white mb-2">Test Engine & Tuning</h1>
+                                    <p className="text-[#8b949e]">Evaluate rules against synthetic logs and historic SIEM datasets to calculate FP rates.</p>
+                                </div>
+                                <button className="bg-[#21262d] border border-[#30363d] hover:bg-[#30363d] text-white px-4 py-2 rounded-md text-sm font-semibold transition">
+                                    Run Pipeline
+                                </button>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-6">
+                                {tests.map((test, idx) => (
+                                    <div key={idx} className="card p-6">
+                                        <div className="flex justify-between items-start mb-4 border-b border-[#30363d] pb-4">
+                                            <div>
+                                                <div className="text-xs text-[#8b949e] mb-1 font-mono">{test.test_id}</div>
+                                                <div className="font-bold text-[#c9d1d9]">{test.rule}</div>
+                                            </div>
+                                            <span className={`text-xs font-bold px-2 py-1 rounded-full ${test.status.includes('Passed') ? 'bg-[#3fb950] text-[#0d1117]' : 'bg-[#f85149] text-white'}`}>
+                                                {test.status}
+                                            </span>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-4 mb-4">
+                                            <div className="bg-[#0d1117] p-3 rounded border border-[#30363d]">
+                                                <div className="text-xs text-[#8b949e] uppercase mb-1">True Positives</div>
+                                                <div className="text-xl font-bold text-[#3fb950] font-mono">{test.true_positives}</div>
+                                            </div>
+                                            <div className="bg-[#0d1117] p-3 rounded border border-[#30363d]">
+                                                <div className="text-xs text-[#8b949e] uppercase mb-1">False Positives</div>
+                                                <div className="text-xl font-bold text-[#f85149] font-mono">{test.false_positives}</div>
+                                            </div>
+                                            <div className="bg-[#0d1117] p-3 rounded border border-[#30363d]">
+                                                <div className="text-xs text-[#8b949e] uppercase mb-1">False Negatives</div>
+                                                <div className="text-xl font-bold text-[#d29922] font-mono">{test.false_negatives}</div>
+                                            </div>
+                                            <div className="bg-[#0d1117] p-3 rounded border border-[#30363d]">
+                                                <div className="text-xs text-[#8b949e] uppercase mb-1">Logs Analyzed</div>
+                                                <div className="text-xl font-bold text-[#58a6ff] font-mono">{(test.dataset_size/1000)}k</div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="mt-4 pt-4 border-t border-[#30363d] flex justify-between items-center">
+                                            <div className="text-sm text-[#8b949e]">Precision: {Math.round((test.true_positives / (test.true_positives + test.false_positives))*100)}%</div>
+                                            <button className="text-sm text-[#58a6ff] hover:underline">View Log Matches</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                }
+
+                if (activeTab === 'SignalAnalysis') {
+                    if (!signalData) return <div className="p-8">Loading...</div>;
+                    
+                    return (
+                        <div className="p-6 bg-[#0f172a] min-h-full">
+                            <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
+                                <h1 className="text-xl font-medium text-slate-200">Cloud SIEM - Signal Analysis - Rules</h1>
+                                <div className="text-slate-400 text-sm">🕒 -24h 🔄 ▽ 🎛️</div>
+                            </div>
+                            
+                            <div className="bg-[#1e293b] border border-slate-700 rounded-md overflow-hidden mb-6">
+                                <div className="p-4 border-b border-slate-700 flex justify-between items-center">
+                                    <h3 className="text-sm font-semibold text-slate-300">Rules Triggered Trend</h3>
+                                    <span className="text-xs text-slate-500">⭕ -14D</span>
+                                </div>
+                                <div className="p-4 h-[300px] w-full">
+                                    <canvas id="signalChart"></canvas>
+                                </div>
+                                <div className="p-4 bg-[#1e293b] border-t border-slate-700 flex flex-wrap gap-x-6 gap-y-2 text-[10px] text-slate-400">
+                                    <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-blue-500"></span>O365 Threat Intel</div>
+                                    <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-blue-400"></span>Active Directory Password Spray Attacks</div>
+                                    <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-slate-300"></span>AWS Cloud Storage Deletion</div>
+                                    <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-green-500"></span>AWS CloudTrail - Public S3 Bucket Exposed</div>
+                                    <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-yellow-400"></span>AWS GuardDuty - Behavior:EC2/TrafficVolumeUnusual</div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-6">
+                                <div className="bg-[#1e293b] border border-slate-700 rounded-md overflow-hidden">
+                                    <div className="p-4 border-b border-slate-700">
+                                        <h3 className="text-sm font-semibold text-slate-300">Top 10 Rules</h3>
+                                    </div>
+                                    <table className="w-full text-left text-xs">
+                                        <thead>
+                                            <tr className="border-b border-slate-700 text-slate-400">
+                                                <th className="p-3 font-normal">ruleName</th>
+                                                <th className="p-3 font-normal text-right">_count</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {signalData.top_rules.map((rule, idx) => (
+                                                <tr key={idx} className="border-b border-slate-700/50 hover:bg-slate-800">
+                                                    <td className="p-3 text-slate-300 flex items-center gap-2"><span className="text-slate-500 w-4">{idx+1}</span> {rule.name}</td>
+                                                    <td className="p-3 text-right text-slate-300">{rule.count}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div className="bg-[#1e293b] border border-slate-700 rounded-md overflow-hidden">
+                                    <div className="p-4 border-b border-slate-700">
+                                        <h3 className="text-sm font-semibold text-slate-300">Top 10 Rules Count by Match Expression</h3>
+                                    </div>
+                                    <table className="w-full text-left text-xs">
+                                        <thead>
+                                            <tr className="border-b border-slate-700 text-slate-400">
+                                                <th className="p-3 font-normal">matchExpression</th>
+                                                <th className="p-3 font-normal text-right">_count</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {signalData.top_expressions.map((exp, idx) => (
+                                                <tr key={idx} className="border-b border-slate-700/50 hover:bg-slate-800 align-top">
+                                                    <td className="p-3 text-slate-300 flex gap-2">
+                                                        <span className="text-slate-500 w-4 pt-1">{idx+1}</span>
+                                                        <pre className="whitespace-pre-wrap font-mono text-[10px] text-slate-400">{exp.expression}</pre>
+                                                    </td>
+                                                    <td className="p-3 text-right text-slate-300 pt-4">{exp.count}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+
+                if (activeTab === 'Architecture') {
+                    return (
+                        <div className="p-8">
+                            <h1 className="text-2xl font-bold text-white mb-6">Detection Engineering Reference</h1>
+                            <div className="flex flex-col gap-8">
+                                {[1, 2, 3, 4, 5].map(num => (
+                                    <div key={num} className="card p-4">
+                                        <img 
+                                            src={`assets/diagram-${num}.png`} 
+                                            alt={`Reference ${num}`}
+                                            className="w-full h-auto object-contain rounded bg-[#0d1117] border border-[#30363d]"
+                                            style={{maxHeight: '600px'}}
+                                            onError={(e) => { e.target.style.display = 'none'; e.target.parentElement.style.display = 'none'; }}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                }
+
+                return null;
+            };
+
+            return (
+                <div className="flex h-screen overflow-hidden">
+                    {/* Sidebar */}
+                    <div className="sidebar flex flex-col">
+                        <div className="p-6 font-bold text-xl flex items-center gap-3 text-white border-b border-[#30363d]">
+                            <span className="text-[#d29922]">🧠</span> SigmaForge
+                        </div>
+                        
+                        <div className="py-4 flex-1">
+                            <div className="text-xs font-semibold text-[#8b949e] px-6 py-2 uppercase">Platform</div>
+                            <div className={`nav-item ${activeTab === 'SignalAnalysis' ? 'active' : ''}`} onClick={() => setActiveTab('SignalAnalysis')}>
+                                📈 Signal Analysis
+                            </div>
+                            <div className={`nav-item ${activeTab === 'Rules' ? 'active' : ''}`} onClick={() => setActiveTab('Rules')}>
+                                📏 Detection Rules
+                            </div>
+                            <div className={`nav-item ${activeTab === 'Testing' ? 'active' : ''}`} onClick={() => setActiveTab('Testing')}>
+                                🧪 Test Engine
+                            </div>
+                            
+                            <div className="text-xs font-semibold text-[#8b949e] px-6 py-2 mt-4 uppercase">Analytics</div>
+                            <div className={`nav-item ${activeTab === 'Coverage' ? 'active' : ''}`} onClick={() => setActiveTab('Coverage')}>
+                                🗺️ Coverage Map
+                            </div>
+                            <div className={`nav-item ${activeTab === 'Architecture' ? 'active' : ''}`} onClick={() => setActiveTab('Architecture')}>
+                                🖼️ Diagrams
+                            </div>
+                        </div>
+                        
+                        <div className="p-6 border-t border-[#30363d] text-[#8b949e] text-xs">
+                            Detection Engineering Lab
+                        </div>
+                    </div>
+
+                    {/* Main Content */}
+                    <div className="flex-1 bg-[#0d1117] overflow-y-auto">
+                        {renderContent()}
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
